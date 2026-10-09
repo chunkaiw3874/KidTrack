@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--
+  安全設定（Content-Security-Policy）：
+  - 不允許載入任何外部網站的程式、圖片、字型
+  - connect-src 'none'：網頁完全不能把資料傳送到任何伺服器
+  - 就算有人在輸入欄塞入惡意程式碼，也無法把資料偷傳出去
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self' blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#ff8a3d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="目標追蹤">
+<title>小朋友目標追蹤</title>
+<link rel="manifest" id="manifestLink">
+<link rel="apple-touch-icon" id="touchIcon">
+<style>
+:root{--bg:#fff8ef;--card:#fff;--ink:#2b2b2b;--muted:#8a8178;--line:#eadfd2;--brand:#ff8a3d;--brand-d:#d9631a;--ok:#2fb36d;--bad:#e5484d;--chip:#fff1e3}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;-webkit-text-size-adjust:100%}
+body{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+button{font-family:inherit}
+header.top{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;border-bottom:1px solid var(--line)}
+header.top h1{font-size:18px;margin:0;flex:1}
+main{max-width:720px;margin:0 auto;padding:12px 16px 24px}
+.btn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:12px;padding:10px 14px;font-size:15px;font-weight:600;cursor:pointer}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.danger{color:var(--bad);border-color:#f3c5c6}
+.btn.small{padding:6px 10px;font-size:13px;border-radius:10px}
+.btn.block{width:100%;margin-top:8px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+.card.muted{opacity:.6}
+.kid-h{display:flex;align-items:center;gap:8px;margin:18px 0 8px;font-size:17px;font-weight:700}
+.goal-t{font-weight:700;font-size:16px;word-break:break-word}
+.meta{color:var(--muted);font-size:13px;margin-top:4px;word-break:break-word}
+.meta.warn{color:#9a6700}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.spacer{flex:1}
+.badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--brand-d);font-weight:600;white-space:nowrap}
+.badge.ok{background:#e3f6ec;color:#1d7f4b}.badge.bad{background:#fde7e7;color:#b4282d}.badge.warn{background:#fff3d6;color:#9a6700}.badge.gray{background:#eee;color:#666}
+.bar{height:10px;background:#f1e7dc;border-radius:999px;overflow:hidden;margin-top:10px}
+.bar>i{display:block;height:100%;background:var(--brand);border-radius:999px;transition:width .3s}
+.bar.ok>i{background:var(--ok)}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:12px}
+.day{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:var(--muted)}
+.dot{width:36px;height:36px;border-radius:50%;border:2px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;padding:0;cursor:pointer}
+.dot.on{background:var(--ok);border-color:var(--ok)}
+.dot.miss{border-color:#f3c5c6;color:var(--bad)}
+.dot.today{border-style:dashed;border-color:var(--brand)}
+.dot.off{background:#f4f4f4;border-color:#eee;color:#bbb;cursor:default}
+.dot:disabled{cursor:default}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+nav.tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:5}
+nav.tabs button{flex:1;border:0;background:none;padding:8px 0;font-size:12px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+nav.tabs button b{font-size:20px;font-weight:400}
+nav.tabs button.act{color:var(--brand-d);font-weight:700}
+label.f{display:block;margin:14px 0 6px;font-weight:600;font-size:14px}
+input[type=text],input[type=number],input[type=date],input[type=password],select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff;color:var(--ink)}
+.hint{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5}
+.err{color:var(--bad);font-size:14px;margin-top:10px;min-height:1em}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-size:14px;cursor:pointer;color:var(--ink)}
+.chip.sel{background:var(--brand);border-color:var(--brand);color:#fff}
+.banner{background:#fff3d6;border:1px solid #f5d98a;border-radius:12px;padding:10px 12px;font-size:14px;margin:8px 0 4px}
+.empty{text-align:center;color:var(--muted);padding:28px 12px}
+.sec-h{font-size:15px;font-weight:700;margin:22px 0 8px}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.modal{background:var(--bg);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+@media(min-width:600px){.modal-bg{align-items:center}.modal{border-radius:20px}}
+.modal h2{margin:0 0 4px;font-size:18px}
+.modal .foot{display:flex;gap:8px;margin-top:18px}
+.modal .foot .btn{flex:1}
+#toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#2b2b2b;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;max-width:90vw;text-align:center;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:.95}
+/* ===== 展示模式（給小朋友看） ===== */
+body.show{padding-bottom:0}
+.show-wrap{max-width:900px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px 32px}
+.show-top{display:flex;align-items:center;gap:8px}
+.show-top h1{flex:1;font-size:24px;margin:0}
+.lock{border:0;background:transparent;font-size:22px;opacity:.45;cursor:pointer;padding:8px}
+.show-date{color:var(--muted);margin:4px 0 8px}
+.kid-big{font-size:28px;font-weight:800;margin:22px 0 10px}
+.sgoal{background:#fff;border-radius:22px;padding:18px;margin-bottom:14px;border:2px solid var(--line)}
+.sgoal.done{border-color:var(--ok);background:#f2fbf6}
+.sgoal .t{font-size:22px;font-weight:800;word-break:break-word}
+.big{font-size:42px;font-weight:900;margin:6px 0 0;line-height:1.1}
+.big small{font-size:18px;font-weight:700;color:var(--muted)}
+.say{font-size:17px;margin-top:6px}
+.sgoal .bar{height:18px}
+.sgoal .dot{width:40px;height:40px}
+.reward{margin-top:12px;font-size:18px;background:var(--chip);border-radius:14px;padding:10px 12px;word-break:break-word}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+'use strict';
+/* =====================================================================
+   小朋友目標追蹤 KidTrack
+   - 單一檔案 PWA，資料只存在這台裝置的瀏覽器（localStorage）
+   - 所有使用者輸入的文字一律用 textContent 顯示，不使用 innerHTML，防止 XSS 注入
+   ===================================================================== */
+const APP_VERSION = 'v1';
+
+// ===== LOGIC-START（純邏輯，不碰畫面，可單獨測試） =====
+const LIM = { name: 20, title: 40, reward: 40 };
+const MAX_KIDS = 20, MAX_GOALS = 300, MAX_CHECKS = 3000;
+const EMOJIS = ['🦁','🐯','🐼','🐰','🦊','🐶','🐱','🐻','🐨','🐸','🦄','🐧','🐳','🦖','🌟','🚀'];
+const WD = ['日','一','二','三','四','五','六'];
+const ALL_DAYS = [0,1,2,3,4,5,6];
+
+const pad = n => String(n).padStart(2, '0');
+// 一律用「本地時間」產生日期字串，避免 toISOString() 用 UTC 造成台灣凌晨日期錯一天
+function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function parseYmd(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function addDays(s, n) { const d = parseYmd(s); d.setDate(d.getDate() + n); return ymd(d); }
+function todayStr() { return ymd(new Date()); }
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function isValidDate(s) { return typeof s === 'string' && DATE_RE.test(s) && ymd(parseYmd(s)) === s; }
+function weekday(s) { return parseYmd(s).getDay(); }
+function isActiveDay(g, s) { return g.days.includes(weekday(s)); }
+function inRange(g, s) { return s >= g.start && (!g.end || s <= g.end); }
+function countActiveDays(g, from, to) {
+  let n = 0;
+  for (let s = from; s <= to; s = addDays(s, 1)) if (isActiveDay(g, s)) n++;
+  return n;
+}
+
+/*
+  計算一個目標的進度
+  type:
+    streak = 連續天數：執行日漏掉一天，連續天數歸零
+    count  = 累計天數：漏掉不歸零，累積到目標天數即達成
+    once   = 一次性：完成一次就達成
+  規則：
+    - 只計算「執行日」（例如只選平日，週末不算漏掉）
+    - 今天還沒打勾不算漏掉（今天還沒結束）
+    - 連續天數曾經達到目標就算達成，之後中斷也不會取消達成
+*/
+function computeStats(g, checks, today) {
+  const set = new Set(checks || []);
+  const st = {
+    run: 0, count: 0, best: 0, achievedOn: null, progress: 0, possible: true, left: null,
+    doneToday: set.has(today),
+    todayActive: inRange(g, today) && isActiveDay(g, today),
+    status: 'active'
+  };
+  if (g.type === 'once') {
+    st.achievedOn = g.doneOn || null;
+    st.progress = st.achievedOn ? 1 : 0;
+  } else {
+    if (today >= g.start) {
+      const last = (g.end && g.end < today) ? g.end : today;
+      let run = 0;
+      for (let s = g.start; s <= last; s = addDays(s, 1)) {
+        if (!isActiveDay(g, s)) continue;            // 非執行日：跳過，不影響連續
+        if (set.has(s)) {
+          run++; st.count++;
+          if (run > st.best) st.best = run;
+          if (!st.achievedOn && ((g.type === 'streak' && run >= g.target) || (g.type === 'count' && st.count >= g.target))) st.achievedOn = s;
+        } else if (s !== today) {
+          run = 0;                                    // 執行日漏掉：連續歸零
+        }
+      }
+      st.run = run;
+    }
+    const cur = g.type === 'streak' ? st.run : st.count;
+    st.progress = st.achievedOn ? 1 : Math.min(cur / g.target, 1);
+    if (!st.achievedOn && g.end && today <= g.end) {
+      const from = today < g.start ? g.start : (st.doneToday ? addDays(today, 1) : today);
+      st.left = countActiveDays(g, from, g.end);      // 剩下還能做的執行日
+      st.possible = cur + st.left >= g.target;
+    }
+  }
+  if (st.achievedOn) st.status = 'achieved';
+  else if (today < g.start) st.status = 'upcoming';
+  else if (g.end && today > g.end) st.status = 'expired';
+  else if (!st.possible) st.status = 'impossible';
+  return st;
+}
+
+function emptyState() {
+  return { version: 1, kids: [], goals: [], checks: {}, settings: { pinHash: null, pinSalt: null, lastExport: null } };
+}
+function cleanStr(v, max) {
+  if (typeof v !== 'string') return '';
+  return v.replace(/[\u0000-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g, '').trim().slice(0, max);
+}
+function cleanInt(v, min, max, def) { const n = Number(v); return Number.isInteger(n) && n >= min && n <= max ? n : def; }
+function cleanId(v) { return typeof v === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(v) ? v : null; }
+
+/* 驗證並清理資料：讀取 localStorage 與「匯入備份」都會經過這裡。
+   不認識的欄位全部丟掉、文字限制長度、日期格式檢查，防止被竄改的檔案搞壞程式 */
+function sanitizeState(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('檔案格式不正確');
+  const out = emptyState();
+  const kidIds = new Set();
+  for (const k of (Array.isArray(raw.kids) ? raw.kids : []).slice(0, MAX_KIDS)) {
+    if (!k || typeof k !== 'object') continue;
+    const id = cleanId(k.id), name = cleanStr(k.name, LIM.name);
+    if (!id || !name || kidIds.has(id)) continue;
+    kidIds.add(id);
+    out.kids.push({ id, name, emoji: EMOJIS.includes(k.emoji) ? k.emoji : EMOJIS[0] });
+  }
+  const goalIds = new Set();
+  for (const g of (Array.isArray(raw.goals) ? raw.goals : []).slice(0, MAX_GOALS)) {
+    if (!g || typeof g !== 'object') continue;
+    const id = cleanId(g.id);
+    if (!id || goalIds.has(id) || !kidIds.has(g.kidId)) continue;
+    if (!['streak', 'count', 'once'].includes(g.type)) continue;
+    const title = cleanStr(g.title, LIM.title);
+    if (!title || !isValidDate(g.start)) continue;
+    let days = Array.isArray(g.days) ? [...new Set(g.days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b) : [];
+    if (!days.length) days = ALL_DAYS.slice();
+    goalIds.add(id);
+    out.goals.push({
+      id, kidId: g.kidId, title, type: g.type,
+      target: g.type === 'once' ? 1 : cleanInt(g.target, 1, 366, 7),
+      days, start: g.start,
+      end: isValidDate(g.end) && g.end >= g.start ? g.end : null,
+      reward: cleanStr(g.reward, LIM.reward),
+      doneOn: g.type === 'once' && isValidDate(g.doneOn) ? g.doneOn : null,
+      rewardGivenOn: isValidDate(g.rewardGivenOn) ? g.rewardGivenOn : null,
+      archived: g.archived === true
+    });
+  }
+  const checks = raw.checks && typeof raw.checks === 'object' ? raw.checks : {};
+  for (const gid of goalIds) {
+    const arr = Object.prototype.hasOwnProperty.call(checks, gid) && Array.isArray(checks[gid]) ? checks[gid] : [];
+    const v = [...new Set(arr.filter(isValidDate))].sort().slice(-MAX_CHECKS);
+    if (v.length) out.checks[gid] = v;
+  }
+  const s = raw.settings && typeof raw.settings === 'object' ? raw.settings : {};
+  if (typeof s.pinHash === 'string' && /^[0-9a-f]{64}$/.test(s.pinHash) && typeof s.pinSalt === 'string' && /^[0-9a-f]{32}$/.test(s.pinSalt)) {
+    out.settings.pinHash = s.pinHash; out.settings.pinSalt = s.pinSalt;
+  }
+  out.settings.lastExport = isValidDate(s.lastExport) ? s.lastExport : null;
+  return out;
+}
+// ===== LOGIC-END =====
+
+(function () {
+  const KEY = 'kidtrack.v1';
+  const MODE_KEY = 'kidtrack.mode';
+  let S = emptyState();
+  let view = 'today';
+  let showKid = 'all';
+  let lastDay = todayStr();
+  let pinFails = 0, pinLockUntil = 0;
+
+  /* ---------- 儲存 ---------- */
+  function store(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  function read(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function load() {
+    const raw = read(KEY);
+    if (!raw) return;
+    try { S = sanitizeState(JSON.parse(raw)); }
+    catch (e) {
+      // 資料損毀時先另存一份，不直接覆蓋，避免資料永久遺失
+      store(KEY + '.corrupt.' + Date.now(), raw);
+      S = emptyState();
+      setTimeout(() => toast('⚠️ 資料讀取失敗，已另存舊資料，請用備份檔匯入'), 300);
+    }
+  }
+  function save() {
+    if (!store(KEY, JSON.stringify(S))) toast('⚠️ 儲存失敗（可能是私密瀏覽或空間不足）');
+    try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+  }
+  function newId() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    const a = new Uint8Array(16); crypto.getRandomValues(a);
+    return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /* ---------- 畫面工具：h() 建立元素，文字一律走 textContent ---------- */
+  function h(tag, attrs, ...children) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : String(v));
+    }
+    for (const c of children.flat()) {
+      if (c == null || c === false) continue;
+      el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    }
+    return el;
+  }
+  const $ = s => document.querySelector(s);
+  let toastTimer;
+  function toast(msg) {
+    const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2400);
+  }
+  function fmtMD(s) { const d = parseYmd(s); return (d.getMonth() + 1) + '/' + d.getDate(); }
+  function fmtLong(s) { const d = parseYmd(s); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（週${WD[d.getDay()]}）`; }
+  function daysLabel(days) {
+    const k = days.join(',');
+    if (k === '0,1,2,3,4,5,6') return '每天';
+    if (k === '1,2,3,4,5') return '週一到週五';
+    if (k === '0,6') return '週末';
+    return '每週' + days.map(d => WD[d]).join('、');
+  }
+  const TYPE_LABEL = { streak: '連續天數（漏一天歸零）', count: '累計天數（不歸零）', once: '一次性' };
+  function goalDesc(g) {
+    const parts = [TYPE_LABEL[g.type]];
+    if (g.type !== 'once') parts.push(daysLabel(g.days));
+    parts.push(g.end ? `${fmtMD(g.start)}～${fmtMD(g.end)}` : `${fmtMD(g.start)} 起`);
+    return parts.join('・');
+  }
+  const kidOf = id => S.kids.find(k => k.id === id);
+  const stats = g => computeStats(g, S.checks[g.id], todayStr());
+
+  /* ---------- Modal ---------- */
+  function openModal(title, body, buttons) {
+    closeModal();
+    const bg = h('div', { class: 'modal-bg', id: 'modalBg', onclick: e => { if (e.target === bg) closeModal(); } },
+      h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' }, h('h2', null, title), body, h('div', { class: 'foot' }, buttons)));
+    document.body.append(bg);
+    const first = bg.querySelector('input');
+    if (first) setTimeout(() => first.focus(), 50);
+  }
+  function closeModal() { const m = $('#modalBg'); if (m) m.remove(); }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  /* ---------- PIN（雜湊後儲存，不存明碼） ---------- */
+  async function sha256Hex(text) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+  }
+  const pinSupported = () => !!(window.crypto && crypto.subtle);
+
+  /* ---------- 主畫面 ---------- */
+  function go(v) { view = v; if (v === 'show') store(MODE_KEY, 'show'); else store(MODE_KEY, 'parent'); render(); window.scrollTo(0, 0); }
+  function render() {
+    closeModal();
+    const app = $('#app');
+    app.replaceChildren();
+    document.body.classList.toggle('show', view === 'show');
+    if (view === 'show') { app.append(renderShow()); return; }
+    const titles = { today: '今日打卡', goals: '目標管理', kids: '小朋友', settings: '設定' };
+    app.append(
+      h('header', { class: 'top' }, h('h1', null, titles[view]),
+        h('button', { class: 'btn small primary', type: 'button', onclick: () => go('show') }, '👀 給小朋友看')),
+      h('main', null, ({ today: renderToday, goals: renderGoals, kids: renderKids, settings: renderSettings })[view]()),
+      h('nav', { class: 'tabs' }, [['today', '✅', '今日'], ['goals', '🎯', '目標'], ['kids', '🧒', '小朋友'], ['settings', '⚙️', '設定']].map(([v, ic, lb]) =>
+        h('button', { type: 'button', class: view === v ? 'act' : '', onclick: () => go(v) }, h('b', null, ic), lb)))
+    );
+  }
+  function emptyBox(msg, btnText, fn) {
+    return h('div', { class: 'empty' }, h('div', null, msg), btnText ? h('button', { class: 'btn primary', style: 'margin-top:12px', type: 'button', onclick: fn }, btnText) : null);
+  }
+  function statusBadge(g, st) {
+    if (st.status === 'achieved') return h('span', { class: 'badge ok' }, '已達成 🎉');
+    if (st.status === 'upcoming') return h('span', { class: 'badge gray' }, '尚未開始');
+    if (st.status === 'expired') return h('span', { class: 'badge bad' }, '已過期');
+    if (st.status === 'impossible') return h('span', { class: 'badge warn' }, '時間不夠了');
+    if (g.type === 'once') return h('span', { class: 'badge' }, '進行中');
+    if (st.doneToday) return h('span', { class: 'badge ok' }, '今天完成');
+    if (st.todayActive) return h('span', { class: 'badge' }, '今天待完成');
+    return h('span', { class: 'badge gray' }, '今天休息');
+  }
+  function bar(st) {
+    return h('div', { class: 'bar' + (st.status === 'achieved' ? ' ok' : '') }, h('i', { style: `width:${Math.round(st.progress * 100)}%` }));
+  }
+  function dayStrip(g, interactive) {
+    const t = todayStr(), set = new Set(S.checks[g.id] || []);
+    const wrap = h('div', { class: 'days' });
+    for (let i = 6; i >= 0; i--) {
+      const d = addDays(t, -i);
+      const act = inRange(g, d) && isActiveDay(g, d);
+      const on = set.has(d);
+      let cls = 'dot', txt = '';
+      if (!act) { cls += ' off'; txt = '–'; }
+      else if (on) { cls += ' on'; txt = '✓'; }
+      else if (d === t) cls += ' today';
+      else { cls += ' miss'; txt = '✗'; }
+      const label = `${fmtMD(d)} ${act ? (on ? '已完成' : '未完成') : '非執行日'}`;
+      const b = h('button', { class: cls, type: 'button', disabled: !act || !interactive, 'aria-label': label, title: label }, txt);
+      if (act && interactive) b.addEventListener('click', () => toggleCheck(g, d));
+      wrap.append(h('div', { class: 'day' }, b, i === 0 ? '今天' : WD[weekday(d)]));
+    }
+    return wrap;
+  }
+
+  /* ---------- 動作 ---------- */
+  function toggleCheck(g, d) {
+    if (!inRange(g, d) || !isActiveDay(g, d) || d > todayStr()) return;
+    const before = stats(g).status;
+    const arr = S.checks[g.id] || [];
+    const i = arr.indexOf(d);
+    if (i >= 0) arr.splice(i, 1); else { arr.push(d); arr.sort(); }
+    S.checks[g.id] = arr;
+    save();
+    const after = stats(g).status;
+    render();
+    if (before !== 'achieved' && after === 'achieved') toast(`🎉 ${kidOf(g.kidId)?.name || ''} 達成「${g.title}」！`);
+  }
+  function toggleOnce(g) {
+    g.doneOn = g.doneOn ? null : todayStr();
+    if (!g.doneOn) g.rewardGivenOn = null;
+    save(); render();
+    if (g.doneOn) toast(`🎉 ${kidOf(g.kidId)?.name || ''} 達成「${g.title}」！`);
+  }
+  function toggleReward(g) { g.rewardGivenOn = g.rewardGivenOn ? null : todayStr(); save(); render(); }
+
+  /* ---------- 今日打卡 ---------- */
+  function goalCard(g) {
+    const st = stats(g);
+    const card = h('div', { class: 'card' + (g.archived ? ' muted' : '') },
+      h('div', { class: 'row' }, h('div', { class: 'goal-t' }, g.title), h('span', { class: 'spacer' }), statusBadge(g, st)),
+      h('div', { class: 'meta' }, goalDesc(g)));
+    if (g.type === 'streak') card.append(h('div', { class: 'meta' }, `🔥 目前連續 ${st.run} 天／目標 ${g.target} 天（最佳紀錄 ${st.best} 天）`));
+    if (g.type === 'count') card.append(h('div', { class: 'meta' }, `✅ 累計 ${st.count} 天／目標 ${g.target} 天`));
+    if (st.status === 'impossible') card.append(h('div', { class: 'meta warn' }, `⚠️ 剩下的執行日（${st.left} 天）已經不夠達成，可以考慮延長結束日期`));
+    card.append(bar(st));
+    if (g.type === 'once') {
+      if (st.status !== 'upcoming' && st.status !== 'expired' || g.doneOn)
+        card.append(h('div', { class: 'actions' }, h('button', { class: 'btn small' + (g.doneOn ? '' : ' primary'), type: 'button', onclick: () => toggleOnce(g) }, g.doneOn ? `↩︎ 取消完成（${fmtMD(g.doneOn)}）` : '✓ 標記完成')));
+    } else {
+      card.append(dayStrip(g, true));
+    }
+    if (g.reward) card.append(h('div', { class: 'meta' }, '🎁 獎勵：' + g.reward));
+    if (st.status === 'achieved') {
+      card.append(h('div', { class: 'actions' }, g.rewardGivenOn
+        ? [h('span', { class: 'meta' }, `✅ 獎勵已於 ${fmtMD(g.rewardGivenOn)} 發放`), h('button', { class: 'btn small', type: 'button', onclick: () => toggleReward(g) }, '取消')]
+        : h('button', { class: 'btn small primary', type: 'button', onclick: () => toggleReward(g) }, '🎁 已發放獎勵')));
+    }
+    return card;
+  }
+  function renderToday() {
+    const t = todayStr(), out = [h('div', { class: 'meta' }, fmtLong(t))];
+    const le = S.settings.lastExport;
+    if (S.goals.length && (!le || le < addDays(t, -14)))
+      out.push(h('div', { class: 'banner' }, '💾 超過 14 天沒有備份。資料只存在這台裝置，建議到「設定」匯出備份。'));
+    if (!S.kids.length) return out.concat(emptyBox('還沒有小朋友資料', '新增小朋友', () => go('kids')));
+    let any = false;
+    for (const k of S.kids) {
+      const order = { active: 0, impossible: 1, achieved: 2, expired: 3 };
+      const list = S.goals.filter(g => g.kidId === k.id && !g.archived)
+        .map(g => [g, stats(g)]).filter(([, st]) => st.status !== 'upcoming')
+        .sort((a, b) => order[a[1].status] - order[b[1].status]);
+      out.push(h('div', { class: 'kid-h' }, `${k.emoji} ${k.name}`));
+      if (!list.length) out.push(h('div', { class: 'meta' }, '目前沒有進行中的目標'));
+      else { any = true; list.forEach(([g]) => out.push(goalCard(g))); }
+    }
+    if (!any && !S.goals.length) out.push(emptyBox('還沒有目標', '新增目標', () => goalForm()));
+    out.push(h('div', { class: 'hint', style: 'margin-top:16px' }, '點圓圈可打勾或取消（可補登最近 7 天）。✗ 表示那天漏掉；「連續天數」類型的目標漏一天就會歸零。'));
+    return out;
+  }
+
+  /* ---------- 目標管理 ---------- */
+  function renderGoals() {
+    const out = [h('button', { class: 'btn primary block', type: 'button', onclick: () => goalForm() }, '＋ 新增目標')];
+    if (!S.kids.length) return out.concat(emptyBox('請先新增小朋友', '前往', () => go('kids')));
+    for (const k of S.kids) {
+      const gs = S.goals.filter(g => g.kidId === k.id);
+      out.push(h('div', { class: 'kid-h' }, `${k.emoji} ${k.name}`));
+      if (!gs.length) { out.push(h('div', { class: 'meta' }, '沒有目標')); continue; }
+      for (const g of gs.sort((a, b) => (a.archived - b.archived) || (a.start < b.start ? 1 : -1))) {
+        const st = stats(g);
+        out.push(h('div', { class: 'card' + (g.archived ? ' muted' : '') },
+          h('div', { class: 'row' }, h('div', { class: 'goal-t' }, g.title), h('span', { class: 'spacer' }), g.archived ? h('span', { class: 'badge gray' }, '已封存') : statusBadge(g, st)),
+          h('div', { class: 'meta' }, goalDesc(g) + (g.type === 'once' ? '' : `・目標 ${g.target} 天`)),
+          g.reward ? h('div', { class: 'meta' }, '🎁 ' + g.reward) : null,
+          h('div', { class: 'actions' },
+            h('button', { class: 'btn small', type: 'button', onclick: () => goalForm(g) }, '編輯'),
+            h('button', { class: 'btn small', type: 'button', onclick: () => { g.archived = !g.archived; save(); render(); } }, g.archived ? '取消封存' : '封存'),
+            h('button', { class: 'btn small danger', type: 'button', onclick: () => {
+              if (!confirm(`確定刪除「${g.title}」？打卡紀錄會一起刪除，無法復原。`)) return;
+              S.goals = S.goals.filter(x => x.id !== g.id); delete S.checks[g.id]; save(); render();
+            } }, '刪除'))));
+      }
+    }
+    out.push(h('div', { class: 'hint', style: 'margin-top:12px' }, '「封存」會把目標從今日與展示頁隱藏，但保留紀錄；「刪除」則完全移除。'));
+    return out;
+  }
+
+  function goalForm(g) {
+    if (!S.kids.length) { toast('請先新增小朋友'); go('kids'); return; }
+    const isNew = !g;
+    const d = g ? { ...g, days: g.days.slice(), kidIds: [g.kidId] }
+      : { kidIds: S.kids.length === 1 ? [S.kids[0].id] : [], title: '', type: 'streak', target: 7, days: ALL_DAYS.slice(), start: todayStr(), end: '', reward: '' };
+
+    const kidChips = h('div', { class: 'chips' });
+    const drawKids = () => kidChips.replaceChildren(...S.kids.map(k => h('button', {
+      type: 'button', class: 'chip' + (d.kidIds.includes(k.id) ? ' sel' : ''),
+      onclick: () => { if (isNew) { const i = d.kidIds.indexOf(k.id); i >= 0 ? d.kidIds.splice(i, 1) : d.kidIds.push(k.id); } else d.kidIds = [k.id]; drawKids(); }
+    }, `${k.emoji} ${k.name}`)));
+    drawKids();
+
+    const title = h('input', { type: 'text', maxlength: LIM.title, value: d.title, placeholder: '例：每天刷牙兩次', autocomplete: 'off' });
+    const type = h('select', null, Object.entries(TYPE_LABEL).map(([v, l]) => h('option', { value: v, selected: d.type === v }, l)));
+    const typeHint = h('div', { class: 'hint' });
+    const target = h('input', { type: 'number', min: 1, max: 366, inputmode: 'numeric', value: d.target });
+    const dayChips = h('div', { class: 'chips' });
+    const drawDays = () => dayChips.replaceChildren(...[1, 2, 3, 4, 5, 6, 0].map(n => h('button', {
+      type: 'button', class: 'chip' + (d.days.includes(n) ? ' sel' : ''),
+      onclick: () => { const i = d.days.indexOf(n); i >= 0 ? d.days.splice(i, 1) : d.days.push(n); d.days.sort((a, b) => a - b); drawDays(); }
+    }, '週' + WD[n])));
+    drawDays();
+    const presets = h('div', { class: 'chips', style: 'margin-top:6px' },
+      [['每天', ALL_DAYS], ['平日', [1, 2, 3, 4, 5]], ['週末', [0, 6]]].map(([l, arr]) =>
+        h('button', { type: 'button', class: 'chip', onclick: () => { d.days = arr.slice(); drawDays(); } }, l)));
+    const start = h('input', { type: 'date', value: d.start });
+    const end = h('input', { type: 'date', value: d.end || '' });
+    const reward = h('input', { type: 'text', maxlength: LIM.reward, value: d.reward, placeholder: '例：週末去公園、小貼紙 5 張', autocomplete: 'off' });
+    const err = h('div', { class: 'err' });
+
+    const recurring = h('div', null,
+      h('label', { class: 'f' }, '需要幾天'), target,
+      h('label', { class: 'f' }, '哪幾天要做'), dayChips, presets,
+      h('div', { class: 'hint' }, '沒選到的日子不算漏掉。例如只選平日，週末沒做不會讓連續天數歸零。'));
+    const syncType = () => {
+      recurring.style.display = type.value === 'once' ? 'none' : '';
+      typeHint.textContent = {
+        streak: '要「連續」做到指定天數。任何一個執行日沒做到，連續天數就從 0 重新開始。',
+        count: '累積做到指定天數就好，中間漏掉沒關係，不會歸零。',
+        once: '完成一次就算達成，例如「讀完一本書」。'
+      }[type.value];
+    };
+    type.addEventListener('change', syncType); syncType();
+
+    const body = h('div', null,
+      h('label', { class: 'f' }, isNew ? '給哪些小朋友（可多選）' : '小朋友'), kidChips,
+      h('label', { class: 'f' }, '目標名稱'), title,
+      h('label', { class: 'f' }, '類型'), type, typeHint,
+      recurring,
+      h('label', { class: 'f' }, '開始日期'), start,
+      h('label', { class: 'f' }, '結束日期（可不填）'), end,
+      h('div', { class: 'hint' }, '有結束日期時，過了這天還沒達成就算「已過期」。'),
+      h('label', { class: 'f' }, '達成獎勵'), reward,
+      isNew ? null : h('div', { class: 'hint', style: 'margin-top:10px' }, '修改開始日期或執行日，會重新計算過去的連續天數。'),
+      err);
+
+    const onSave = () => {
+      const v = {
+        title: cleanStr(title.value, LIM.title), type: type.value,
+        target: type.value === 'once' ? 1 : cleanInt(target.value, 1, 366, NaN),
+        days: type.value === 'once' ? ALL_DAYS.slice() : d.days.slice(),
+        start: start.value, end: end.value || null, reward: cleanStr(reward.value, LIM.reward)
+      };
+      const msg = !d.kidIds.length ? '請選擇小朋友'
+        : !v.title ? '請輸入目標名稱'
+        : !['streak', 'count', 'once'].includes(v.type) ? '類型不正確'
+        : Number.isNaN(v.target) ? '天數請輸入 1～366 的整數'
+        : !v.days.length ? '請至少選一個執行日'
+        : !isValidDate(v.start) ? '請選擇開始日期'
+        : v.end && !isValidDate(v.end) ? '結束日期格式不正確'
+        : v.end && v.end < v.start ? '結束日期不能早於開始日期'
+        : v.type !== 'once' && v.end && countActiveDays(v, v.start, v.end) < v.target ? `這段期間只有 ${countActiveDays(v, v.start, v.end)} 個執行日，少於需要的 ${v.target} 天`
+        : '';
+      if (msg) { err.textContent = msg; return; }
+      if (isNew) {
+        if (S.goals.length + d.kidIds.length > MAX_GOALS) { err.textContent = '目標數量已達上限'; return; }
+        for (const kidId of d.kidIds) S.goals.push({ id: newId(), kidId, ...v, doneOn: null, rewardGivenOn: null, archived: false });
+      } else {
+        if (g.type === 'once' && v.type !== 'once') g.doneOn = null;
+        Object.assign(g, v, { kidId: d.kidIds[0] });
+      }
+      save(); render(); toast(isNew ? '已新增目標' : '已更新');
+    };
+    openModal(isNew ? '新增目標' : '編輯目標', body, [
+      h('button', { class: 'btn', type: 'button', onclick: closeModal }, '取消'),
+      h('button', { class: 'btn primary', type: 'button', onclick: onSave }, '儲存')]);
+  }
+
+  /* ---------- 小朋友 ---------- */
+  function renderKids() {
+    const out = [h('button', { class: 'btn primary block', type: 'button', onclick: () => kidForm() }, '＋ 新增小朋友')];
+    if (!S.kids.length) out.push(emptyBox('還沒有小朋友資料'));
+    for (const k of S.kids) {
+      const n = S.goals.filter(g => g.kidId === k.id).length;
+      out.push(h('div', { class: 'card row' },
+        h('div', { style: 'font-size:28px' }, k.emoji),
+        h('div', { style: 'flex:1' }, h('div', { class: 'goal-t' }, k.name), h('div', { class: 'meta' }, `${n} 個目標`)),
+        h('button', { class: 'btn small', type: 'button', onclick: () => kidForm(k) }, '編輯'),
+        h('button', { class: 'btn small danger', type: 'button', onclick: () => {
+          if (!confirm(`確定刪除「${k.name}」？他的 ${n} 個目標和打卡紀錄都會刪除，無法復原。`)) return;
+          for (const g of S.goals.filter(g => g.kidId === k.id)) delete S.checks[g.id];
+          S.goals = S.goals.filter(g => g.kidId !== k.id);
+          S.kids = S.kids.filter(x => x.id !== k.id);
+          save(); render();
+        } }, '刪除')));
+    }
+    out.push(h('div', { class: 'hint', style: 'margin-top:12px' }, '🔒 建議使用暱稱或小名，不需要輸入全名、生日等個人資料。'));
+    return out;
+  }
+  function kidForm(k) {
+    if (!k && S.kids.length >= MAX_KIDS) { toast('已達人數上限'); return; }
+    let emoji = k ? k.emoji : EMOJIS[S.kids.length % EMOJIS.length];
+    const name = h('input', { type: 'text', maxlength: LIM.name, value: k ? k.name : '', placeholder: '暱稱，例：小寶', autocomplete: 'off' });
+    const chips = h('div', { class: 'chips' });
+    const draw = () => chips.replaceChildren(...EMOJIS.map(e => h('button', { type: 'button', class: 'chip' + (e === emoji ? ' sel' : ''), style: 'font-size:20px', onclick: () => { emoji = e; draw(); } }, e)));
+    draw();
+    const err = h('div', { class: 'err' });
+    openModal(k ? '編輯小朋友' : '新增小朋友', h('div', null, h('label', { class: 'f' }, '名字'), name, h('label', { class: 'f' }, '頭像'), chips, err), [
+      h('button', { class: 'btn', type: 'button', onclick: closeModal }, '取消'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => {
+        const n = cleanStr(name.value, LIM.name);
+        if (!n) { err.textContent = '請輸入名字'; return; }
+        if (k) { k.name = n; k.emoji = emoji; } else S.kids.push({ id: newId(), name: n, emoji });
+        save(); render();
+      } }, '儲存')]);
+  }
+
+  /* ---------- 設定 ---------- */
+  function renderSettings() {
+    const hasPin = !!S.settings.pinHash;
+    const fileIn = h('input', { type: 'file', accept: 'application/json,.json', style: 'display:none' });
+    fileIn.addEventListener('change', () => importFile(fileIn.files[0]));
+    return [
+      h('div', { class: 'sec-h' }, '🔒 展示模式密碼（PIN）'),
+      h('div', { class: 'card' },
+        h('div', { class: 'meta' }, hasPin ? '已設定。從展示頁回到家長模式需要輸入 PIN。' : '尚未設定。設定後，小朋友無法從展示頁回到家長模式。'),
+        pinSupported() ? h('div', { class: 'actions' },
+          h('button', { class: 'btn small primary', type: 'button', onclick: pinForm }, hasPin ? '更改 PIN' : '設定 PIN'),
+          hasPin ? h('button', { class: 'btn small danger', type: 'button', onclick: () => { if (confirm('確定移除 PIN？')) { S.settings.pinHash = S.settings.pinSalt = null; save(); render(); } } }, '移除 PIN') : null)
+          : h('div', { class: 'meta warn' }, '此環境不支援（需透過 https 網址開啟）')),
+      h('div', { class: 'sec-h' }, '💾 備份與還原'),
+      h('div', { class: 'card' },
+        h('div', { class: 'meta' }, '資料只存在這台裝置的瀏覽器。清除瀏覽器資料、換手機，或 iPhone 長時間沒開啟網頁版，資料都可能消失。請定期匯出備份。'),
+        h('div', { class: 'meta' }, '上次備份：' + (S.settings.lastExport ? fmtLong(S.settings.lastExport) : '從未備份')),
+        h('div', { class: 'actions' },
+          h('button', { class: 'btn small primary', type: 'button', onclick: exportData }, '匯出備份檔'),
+          h('button', { class: 'btn small', type: 'button', onclick: () => fileIn.click() }, '從備份檔還原'), fileIn)),
+      h('div', { class: 'sec-h' }, '⚠️ 危險操作'),
+      h('div', { class: 'card' },
+        h('button', { class: 'btn small danger', type: 'button', onclick: () => {
+          if (prompt('這會刪除所有資料且無法復原。請輸入「刪除」確認') !== '刪除') return;
+          S = emptyState(); save(); render(); toast('已清除所有資料');
+        } }, '清除所有資料')),
+      h('div', { class: 'hint', style: 'text-align:center;margin-top:20px' }, `KidTrack ${APP_VERSION}・資料不會上傳到任何伺服器`)
+    ];
+  }
+  function pinForm() {
+    const p1 = h('input', { type: 'password', inputmode: 'numeric', maxlength: 8, autocomplete: 'new-password' });
+    const p2 = h('input', { type: 'password', inputmode: 'numeric', maxlength: 8, autocomplete: 'new-password' });
+    const err = h('div', { class: 'err' });
+    openModal('設定 PIN', h('div', null, h('label', { class: 'f' }, '輸入 4～8 位數字'), p1, h('label', { class: 'f' }, '再輸入一次'), p2,
+      h('div', { class: 'hint' }, '不要使用提款卡密碼等重要密碼。忘記 PIN 時，可清除網站資料後用備份檔還原。'), err), [
+      h('button', { class: 'btn', type: 'button', onclick: closeModal }, '取消'),
+      h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+        if (!/^\d{4,8}$/.test(p1.value)) { err.textContent = 'PIN 需為 4～8 位數字'; return; }
+        if (p1.value !== p2.value) { err.textContent = '兩次輸入不一樣'; return; }
+        const salt = newId().replace(/-/g, '').slice(0, 32).padEnd(32, '0');
+        S.settings.pinSalt = salt;
+        S.settings.pinHash = await sha256Hex(salt + ':' + p1.value);
+        save(); render(); toast('已設定 PIN');
+      } }, '儲存')]);
+  }
+  function exportData() {
+    const data = { app: 'KidTrack', exportedAt: new Date().toISOString(), version: 1, kids: S.kids, goals: S.goals, checks: S.checks };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = h('a', { href: url, download: `kidtrack-backup-${todayStr()}.json` });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    S.settings.lastExport = todayStr(); save(); render(); toast('已匯出備份檔');
+  }
+  function importFile(file) {
+    if (!file) return;
+    if (file.size > 1024 * 1024) { toast('檔案太大，不是有效的備份檔'); return; }
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const data = sanitizeState(JSON.parse(String(r.result)));
+        if (!data.kids.length) throw new Error('檔案裡沒有小朋友資料');
+        if (!confirm(`備份檔內有 ${data.kids.length} 位小朋友、${data.goals.length} 個目標。\n還原後會取代目前所有資料，確定嗎？`)) return;
+        data.settings = S.settings;          // 保留目前裝置的 PIN，不被檔案覆蓋
+        S = data; save(); render(); toast('已還原備份');
+      } catch (e) { toast('還原失敗：' + (e && e.message ? e.message : '檔案格式不正確')); }
+    };
+    r.readAsText(file);
+  }
+
+  /* ---------- 展示模式（給小朋友看，不能修改） ---------- */
+  function renderShow() {
+    const t = todayStr();
+    const wrap = h('div', { class: 'show-wrap' },
+      h('div', { class: 'show-top' }, h('h1', null, '🌟 我的目標'),
+        h('button', { class: 'lock', type: 'button', 'aria-label': '家長模式', onclick: exitShow }, '🔒')),
+      h('div', { class: 'show-date' }, fmtLong(t)));
+    if (S.kids.length > 1) {
+      wrap.append(h('div', { class: 'chips' },
+        h('button', { type: 'button', class: 'chip' + (showKid === 'all' ? ' sel' : ''), onclick: () => { showKid = 'all'; render(); } }, '全部'),
+        S.kids.map(k => h('button', { type: 'button', class: 'chip' + (showKid === k.id ? ' sel' : ''), style: 'font-size:16px', onclick: () => { showKid = k.id; render(); } }, `${k.emoji} ${k.name}`))));
+    }
+    const kids = S.kids.filter(k => showKid === 'all' || k.id === showKid);
+    if (!kids.length) wrap.append(h('div', { class: 'empty' }, '還沒有目標喔'));
+    for (const k of kids) {
+      wrap.append(h('div', { class: 'kid-big' }, `${k.emoji} ${k.name}`));
+      const list = S.goals.filter(g => g.kidId === k.id && !g.archived).map(g => [g, stats(g)])
+        .filter(([, st]) => ['active', 'impossible', 'achieved'].includes(st.status));
+      if (!list.length) { wrap.append(h('div', { class: 'say', style: 'color:var(--muted)' }, '目前沒有目標')); continue; }
+      list.sort((a, b) => (a[1].status === 'achieved') - (b[1].status === 'achieved'));
+      for (const [g, st] of list) wrap.append(showCard(g, st, t));
+    }
+    return wrap;
+  }
+  function showCard(g, st, t) {
+    const done = st.status === 'achieved';
+    const card = h('div', { class: 'sgoal' + (done ? ' done' : '') }, h('div', { class: 't' }, g.title));
+    if (g.type === 'once') {
+      card.append(h('div', { class: 'big' }, done ? '⭐ 完成了！' : '💪 加油！'));
+    } else {
+      const cur = g.type === 'streak' ? st.run : st.count;
+      card.append(h('div', { class: 'big' }, (g.type === 'streak' ? '🔥 ' : '✅ ') + (done ? g.target : cur), h('small', null, ` / ${g.target} 天`)));
+      let say;
+      if (done) say = '太棒了，你做到了！🎉';
+      else if (st.doneToday) say = '今天完成了！👍';
+      else if (st.todayActive) say = g.type === 'streak' && st.run === 0 && st.best > 0 ? '重新開始，今天加油！💪' : '今天還沒完成喔';
+      else say = '今天休息 😴';
+      card.append(h('div', { class: 'say' }, say));
+      if (!done && g.end && st.left != null) card.append(h('div', { class: 'meta' }, `還剩 ${st.left} 次機會`));
+      card.append(bar(st), dayStrip(g, false));
+    }
+    if (g.reward) card.append(h('div', { class: 'reward' },
+      done ? (g.rewardGivenOn ? '✅ 已經拿到：' : '🎉 可以得到：') : '🎁 達成就可以得到：', g.reward));
+    return card;
+  }
+  function exitShow() {
+    if (!S.settings.pinHash || !pinSupported()) { go('today'); return; }
+    const pin = h('input', { type: 'password', inputmode: 'numeric', maxlength: 8, autocomplete: 'off' });
+    const err = h('div', { class: 'err' });
+    const check = async () => {
+      if (Date.now() < pinLockUntil) { err.textContent = `錯誤太多次，請 ${Math.ceil((pinLockUntil - Date.now()) / 1000)} 秒後再試`; return; }
+      const hash = await sha256Hex(S.settings.pinSalt + ':' + pin.value);
+      if (hash === S.settings.pinHash) { pinFails = 0; go('today'); return; }
+      pinFails++; pin.value = '';
+      if (pinFails >= 5) { pinLockUntil = Date.now() + 30000; pinFails = 0; err.textContent = '錯誤太多次，請 30 秒後再試'; }
+      else err.textContent = 'PIN 不正確';
+    };
+    pin.addEventListener('keydown', e => { if (e.key === 'Enter') check(); });
+    openModal('家長模式', h('div', null, h('label', { class: 'f' }, '請輸入 PIN'), pin, err), [
+      h('button', { class: 'btn', type: 'button', onclick: closeModal }, '取消'),
+      h('button', { class: 'btn primary', type: 'button', onclick: check }, '進入')]);
+  }
+
+  /* ---------- PWA：圖示與 manifest（全部在本檔產生，不需外部檔案） ---------- */
+  function setupPwa() {
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 512;
+      const x = c.getContext('2d');
+      x.fillStyle = '#ff8a3d'; x.fillRect(0, 0, 512, 512);
+      x.font = '300px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText('⭐', 256, 280);
+      const icon = c.toDataURL('image/png');
+      $('#touchIcon').href = icon;
+      const manifest = {
+        name: '小朋友目標追蹤', short_name: '目標追蹤', lang: 'zh-Hant',
+        start_url: new URL('./', location.href).href, scope: new URL('./', location.href).href,
+        display: 'standalone', background_color: '#fff8ef', theme_color: '#ff8a3d',
+        icons: [{ src: icon, sizes: '512x512', type: 'image/png', purpose: 'any' }]
+      };
+      $('#manifestLink').href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }));
+    } catch (e) {}
+  }
+
+  /* ---------- 啟動 ---------- */
+  load();
+  if (read(MODE_KEY) === 'show') view = 'show';   // 上次停在展示頁就維持展示頁（小朋友重新整理也進不了家長模式）
+  setupPwa();
+  render();
+  // 跨日自動更新（平板一直開著展示頁時）
+  const refreshIfNewDay = () => { const t = todayStr(); if (t !== lastDay) { lastDay = t; if (!$('#modalBg')) render(); } };
+  setInterval(refreshIfNewDay, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshIfNewDay(); });
+})();
+</script>
+</body>
+</html>
