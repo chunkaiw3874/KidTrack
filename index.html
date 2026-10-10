@@ -108,12 +108,12 @@ body.show{padding-bottom:0}
    - 單一檔案 PWA，資料只存在這台裝置的瀏覽器（localStorage）
    - 所有使用者輸入的文字一律用 textContent 顯示，不使用 innerHTML，防止 XSS 注入
    ===================================================================== */
-const APP_VERSION = 'v1';
+const APP_VERSION = 'v1.1';
 
 // ===== LOGIC-START（純邏輯，不碰畫面，可單獨測試） =====
 const LIM = { name: 20, title: 40, reward: 40 };
 const MAX_KIDS = 20, MAX_GOALS = 300, MAX_CHECKS = 3000;
-const EMOJIS = ['🦁','🐯','🐼','🐰','🦊','🐶','🐱','🐻','🐨','🐸','🦄','🐧','🐳','🦖','🌟','🚀'];
+const EMOJIS = ['🦁','🐯','🐼','🐰','🦊','🐶','🐱','🐻','🐨','🐸','🦄','🐧','🐳','🦖','🌟','🚀','🪿'];
 const WD = ['日','一','二','三','四','五','六'];
 const ALL_DAYS = [0,1,2,3,4,5,6];
 
