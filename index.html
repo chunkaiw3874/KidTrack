@@ -57,6 +57,7 @@ main{max-width:720px;margin:0 auto;padding:12px 16px 24px}
 .dot.off{background:#f4f4f4;border-color:#eee;color:#bbb;cursor:default}
 .dot:disabled{cursor:default}
 .dot.on.manual{background:#8fd4ab;border-color:#8fd4ab}
+.dot.fail{background:var(--bad);border-color:var(--bad);color:#fff}
 .dot.cnt{font-size:11px;color:var(--brand-d)}
 .dot.miss.cnt{color:var(--bad)}
 .dot.sel{outline:3px solid var(--brand);outline-offset:2px}
@@ -122,7 +123,7 @@ body.show{padding-bottom:0}
    - 單一檔案 PWA，資料只存在這台裝置的瀏覽器（localStorage）
    - 所有使用者輸入的文字一律用 textContent 顯示，不使用 innerHTML，防止 XSS 注入
    ===================================================================== */
-const APP_VERSION = 'v1.2';
+const APP_VERSION = 'v1.3';
 
 // ===== LOGIC-START（純邏輯，不碰畫面，可單獨測試） =====
 const LIM = { name: 20, title: 40, reward: 40, item: 30 };
@@ -159,11 +160,12 @@ function countActiveDays(g, from, to) {
     - 今天還沒打勾不算漏掉（今天還沒結束）
     - 連續天數曾經達到目標就算達成，之後中斷也不會取消達成
 */
-function computeStats(g, checks, today) {
+function computeStats(g, checks, today, failed) {
   const set = new Set(checks || []);
+  const failedToday = (failed || []).includes(today);   // 今天被家長標記「未達成」
   const st = {
     run: 0, count: 0, best: 0, achievedOn: null, progress: 0, possible: true, left: null,
-    doneToday: set.has(today),
+    doneToday: set.has(today), failedToday,
     todayActive: inRange(g, today) && isActiveDay(g, today),
     status: 'active'
   };
@@ -180,8 +182,8 @@ function computeStats(g, checks, today) {
           run++; st.count++;
           if (run > st.best) st.best = run;
           if (!st.achievedOn && ((g.type === 'streak' && run >= g.target) || (g.type === 'count' && st.count >= g.target))) st.achievedOn = s;
-        } else if (s !== today) {
-          run = 0;                                    // 執行日漏掉：連續歸零
+        } else if (s !== today || failedToday) {
+          run = 0;                                    // 執行日漏掉（或今天標記未達成）：連續歸零
         }
       }
       st.run = run;
@@ -189,7 +191,7 @@ function computeStats(g, checks, today) {
     const cur = g.type === 'streak' ? st.run : st.count;
     st.progress = st.achievedOn ? 1 : Math.min(cur / g.target, 1);
     if (!st.achievedOn && g.end && today <= g.end) {
-      const from = today < g.start ? g.start : (st.doneToday ? addDays(today, 1) : today);
+      const from = today < g.start ? g.start : (st.doneToday || failedToday ? addDays(today, 1) : today);
       st.left = countActiveDays(g, from, g.end);      // 剩下還能做的執行日
       st.possible = cur + st.left >= g.target;
     }
@@ -207,10 +209,13 @@ function computeStats(g, checks, today) {
     S.checks[目標]        = 「這天算達成」的日期清單（連續天數用這個計算）
     S.itemLog[目標][日期] = 這天勾了哪些項目
     S.manual[目標]        = 家長「手動算達成」的日期（項目沒全部完成，但家長決定算數）
+    S.failed[目標]        = 家長按「未達成」的日期（明確記錄這天沒做到）
   規則：
     - 項目全部勾完 → 這天自動算達成
     - 沒全部勾完   → 家長可以自由決定這天算不算達成
+    - 按「未達成」 → 這天一定不算達成（優先於項目勾選），今天按下去連續天數立刻歸零
     - 「這天算達成」會直接記下來，之後修改項目清單也不會改變過去的紀錄
+    - 同一天不會同時是「達成」和「未達成」
 */
 function dayItems(g, log, date) {
   const ids = new Set(((log || {})[date]) || []);
@@ -223,8 +228,10 @@ function removeDate(arr, d) { const i = arr.indexOf(d); if (i >= 0) arr.splice(i
 function tidy(S, gid) {
   if (S.checks[gid] && !S.checks[gid].length) delete S.checks[gid];
   if (S.manual[gid] && !S.manual[gid].length) delete S.manual[gid];
+  if (S.failed[gid] && !S.failed[gid].length) delete S.failed[gid];
   if (S.itemLog[gid] && !Object.keys(S.itemLog[gid]).length) delete S.itemLog[gid];
 }
+const isFailed = (S, gid, d) => (S.failed[gid] || []).includes(d);
 function toggleItemState(S, g, date, itemId) {
   if (!(g.items || []).some(it => it.id === itemId)) return;
   const log = S.itemLog[g.id] || (S.itemLog[g.id] = {});
@@ -232,6 +239,7 @@ function toggleItemState(S, g, date, itemId) {
   const i = arr.indexOf(itemId);
   if (i >= 0) arr.splice(i, 1); else arr.push(itemId);
   if (!arr.length) delete log[date];
+  if (isFailed(S, g.id, date)) { tidy(S, g.id); return; }   // 已標記未達成：只記錄勾選，不改變結果
   const checks = S.checks[g.id] || (S.checks[g.id] = []);
   const manual = S.manual[g.id] || (S.manual[g.id] = []);
   if (dayItems(g, log, date).all) { addDate(checks, date); removeDate(manual, date); }   // 全部完成 → 自動達成
@@ -239,16 +247,37 @@ function toggleItemState(S, g, date, itemId) {
   tidy(S, g.id);
 }
 function toggleManualState(S, g, date) {
-  if (dayItems(g, S.itemLog[g.id], date).all) return;   // 已經全部完成，不需要手動
+  if (dayItems(g, S.itemLog[g.id], date).all && !isFailed(S, g.id, date)) return;   // 已經全部完成，不需要手動
   const checks = S.checks[g.id] || (S.checks[g.id] = []);
   const manual = S.manual[g.id] || (S.manual[g.id] = []);
+  const failed = S.failed[g.id] || (S.failed[g.id] = []);
   if (manual.includes(date)) { removeDate(manual, date); removeDate(checks, date); }
-  else { addDate(manual, date); addDate(checks, date); }
+  else { addDate(manual, date); addDate(checks, date); removeDate(failed, date); }
+  tidy(S, g.id);
+}
+// 沒有檢查項目的目標：「達成」按鈕
+function toggleDoneState(S, g, date) {
+  const checks = S.checks[g.id] || (S.checks[g.id] = []);
+  const failed = S.failed[g.id] || (S.failed[g.id] = []);
+  if (checks.includes(date)) { removeDate(checks, date); removeDate(S.manual[g.id] || [], date); }
+  else { addDate(checks, date); removeDate(failed, date); }
+  tidy(S, g.id);
+}
+// 「未達成」按鈕：再按一次可取消
+function toggleFailedState(S, g, date) {
+  const checks = S.checks[g.id] || (S.checks[g.id] = []);
+  const failed = S.failed[g.id] || (S.failed[g.id] = []);
+  if (failed.includes(date)) {
+    removeDate(failed, date);
+    if (dayItems(g, S.itemLog[g.id], date).all) addDate(checks, date);   // 取消後，若項目已全部完成就恢復自動達成
+  } else {
+    addDate(failed, date); removeDate(checks, date); removeDate(S.manual[g.id] || [], date);
+  }
   tidy(S, g.id);
 }
 
 function emptyState() {
-  return { version: 1, kids: [], goals: [], checks: {}, itemLog: {}, manual: {}, settings: { pinHash: null, pinSalt: null, lastExport: null } };
+  return { version: 1, kids: [], goals: [], checks: {}, itemLog: {}, manual: {}, failed: {}, settings: { pinHash: null, pinSalt: null, lastExport: null } };
 }
 function cleanStr(v, max) {
   if (typeof v !== 'string') return '';
@@ -314,6 +343,10 @@ function sanitizeState(raw) {
     const okDays = new Set(out.checks[gid] || []);
     const mv = [...new Set(m.filter(d => isValidDate(d) && okDays.has(d)))].sort();
     if (mv.length) out.manual[gid] = mv;
+    // 未達成：有效日期，而且不能同時是達成日
+    const f = own(raw.failed, gid) && Array.isArray(raw.failed[gid]) ? raw.failed[gid] : [];
+    const fv = [...new Set(f.filter(d => isValidDate(d) && !okDays.has(d)))].sort().slice(-MAX_CHECKS);
+    if (fv.length) out.failed[gid] = fv;
     // 項目勾選紀錄：只保留有效日期、而且是這個目標現有的項目
     if (!g.items.length || !own(raw.itemLog, gid)) continue;
     const src = raw.itemLog[gid];
@@ -408,7 +441,7 @@ function sanitizeState(raw) {
     return parts.join('・');
   }
   const kidOf = id => S.kids.find(k => k.id === id);
-  const stats = g => computeStats(g, S.checks[g.id], todayStr());
+  const stats = g => computeStats(g, S.checks[g.id], todayStr(), S.failed[g.id]);
 
   /* ---------- Modal ---------- */
   function openModal(title, body, buttons) {
@@ -456,6 +489,7 @@ function sanitizeState(raw) {
     if (st.status === 'impossible') return h('span', { class: 'badge warn' }, '時間不夠了');
     if (g.type === 'once') return h('span', { class: 'badge' }, '進行中');
     if (st.doneToday) return h('span', { class: 'badge ok' }, '今天完成');
+    if (st.failedToday) return h('span', { class: 'badge bad' }, '今天未達成');
     if (st.todayActive) return h('span', { class: 'badge' }, '今天待完成');
     return h('span', { class: 'badge gray' }, '今天休息');
   }
@@ -463,7 +497,7 @@ function sanitizeState(raw) {
     return h('div', { class: 'bar' + (st.status === 'achieved' ? ' ok' : '') }, h('i', { style: `width:${Math.round(st.progress * 100)}%` }));
   }
   function dayStrip(g, interactive) {
-    const t = todayStr(), set = new Set(S.checks[g.id] || []), man = new Set(S.manual[g.id] || []);
+    const t = todayStr(), set = new Set(S.checks[g.id] || []), man = new Set(S.manual[g.id] || []), fail = new Set(S.failed[g.id] || []);
     const hasItems = !!(g.items && g.items.length);
     const sel = selDay[g.id] || t;
     const wrap = h('div', { class: 'days' });
@@ -475,18 +509,16 @@ function sanitizeState(raw) {
       let cls = 'dot', txt = '';
       if (!act) { cls += ' off'; txt = '–'; }
       else if (on) { cls += ' on' + (man.has(d) ? ' manual' : ''); txt = '✓'; }
+      else if (fail.has(d)) { cls += ' fail'; txt = '✗'; }                     // 家長按了「未達成」：實心紅色
       else {
         cls += d === t ? ' today' : ' miss';
         if (di && di.done) { cls += ' cnt'; txt = `${di.done}/${di.total}`; }   // 部分完成：顯示 2/3
         else if (d !== t) txt = '✗';
       }
-      if (hasItems && interactive && act && d === sel) cls += ' sel';
-      const label = `${fmtMD(d)} ${act ? (on ? (man.has(d) ? '手動算達成' : '已達成') : (di && di.done ? `完成 ${di.done}/${di.total} 項` : '未完成')) : '非執行日'}`;
+      if (interactive && act && d === sel) cls += ' sel';
+      const label = `${fmtMD(d)} ${act ? (on ? (man.has(d) ? '手動算達成' : '已達成') : fail.has(d) ? '未達成' : (di && di.done ? `完成 ${di.done}/${di.total} 項` : '未記錄')) : '非執行日'}`;
       const b = h('button', { class: cls, type: 'button', disabled: !act || !interactive, 'aria-label': label, title: label }, txt);
-      if (act && interactive) b.addEventListener('click', () => {
-        if (hasItems) { selDay[g.id] = d; render(); }   // 有檢查項目：點圓圈 = 切換要檢查的日期
-        else toggleCheck(g, d);                          // 沒有項目：點圓圈 = 直接打勾
-      });
+      if (act && interactive) b.addEventListener('click', () => { selDay[g.id] = d; render(); });   // 點圓圈 = 選擇要記錄的日期
       wrap.append(h('div', { class: 'day' }, b, i === 0 ? '今天' : WD[weekday(d)]));
     }
     return wrap;
@@ -503,41 +535,40 @@ function sanitizeState(raw) {
     render();
     if (before !== 'achieved' && after === 'achieved') toast(`🎉 ${kidOf(g.kidId)?.name || ''} 達成「${g.title}」！`);
   }
-  function toggleCheck(g, d) {
-    changeDay(g, d, () => {
-      const arr = S.checks[g.id] || (S.checks[g.id] = []);
-      if (arr.includes(d)) { removeDate(arr, d); removeDate(S.manual[g.id] || [], d); } else addDate(arr, d);
-      tidy(S, g.id);
-    });
-  }
   const toggleItem = (g, d, itemId) => changeDay(g, d, () => toggleItemState(S, g, d, itemId));
   const toggleManual = (g, d) => changeDay(g, d, () => toggleManualState(S, g, d));
+  const toggleDone = (g, d) => changeDay(g, d, () => toggleDoneState(S, g, d));
+  const toggleFailed = (g, d) => changeDay(g, d, () => toggleFailedState(S, g, d));
 
-  // 每日檢查項目面板（家長頁）
-  function checklistPanel(g) {
+  // 每日紀錄面板（家長頁）：選定日期的檢查項目＋「達成／未達成」按鈕
+  function dayPanel(g) {
     const t = todayStr(), d = selDay[g.id] || t;
     const box = h('div', { class: 'items-box' });
     if (!(inRange(g, d) && isActiveDay(g, d))) {
       box.append(h('div', { class: 'meta' }, '今天不是執行日。點上方圓圈可以補登其他天。'));
       return box;
     }
+    const hasItems = !!(g.items && g.items.length);
     const di = dayItems(g, S.itemLog[g.id], d);
-    const on = (S.checks[g.id] || []).includes(d), man = (S.manual[g.id] || []).includes(d);
-    box.append(h('div', { class: 'meta', style: 'font-weight:700' }, (d === t ? '今天' : `${fmtMD(d)}（週${WD[weekday(d)]}）`) + '的檢查項目'));
-    for (const it of g.items) {
+    const on = (S.checks[g.id] || []).includes(d), man = (S.manual[g.id] || []).includes(d), failed = isFailed(S, g.id, d);
+    const dayName = d === t ? '今天' : `${fmtMD(d)}（週${WD[weekday(d)]}）`;
+    box.append(h('div', { class: 'meta', style: 'font-weight:700' }, dayName + (hasItems ? '的檢查項目' : '的紀錄')));
+    for (const it of (hasItems ? g.items : [])) {
       const checked = di.ids.has(it.id);
       const cb = h('input', { type: 'checkbox', checked });
       cb.addEventListener('change', () => toggleItem(g, d, it.id));
       box.append(h('label', { class: 'ck' + (checked ? ' done' : '') }, cb, h('span', null, it.text)));
     }
-    if (di.all) {
-      box.append(h('div', { class: 'meta', style: 'color:#1d7f4b;margin-top:8px' }, '✅ 全部完成，這天自動算達成'));
-    } else {
-      box.append(h('div', { class: 'row', style: 'margin-top:8px' },
-        h('span', { class: 'meta', style: 'margin:0' }, `已完成 ${di.done}/${di.total} 項` + (man ? '・已手動算達成' : on ? '' : '・這天還不算達成')),
-        h('span', { class: 'spacer' }),
-        h('button', { class: 'btn small' + (man ? '' : ' primary'), type: 'button', onclick: () => toggleManual(g, d) }, man ? '取消手動達成' : '手動算這天達成')));
-    }
+    const failBtn = h('button', { class: 'btn small' + (failed ? '' : ' danger'), type: 'button', onclick: () => toggleFailed(g, d) }, failed ? '取消未達成' : '✗ 未達成');
+    let msg, msgColor = '', btns = [];
+    if (failed) { msg = '❌ 這天標記為未達成'; msgColor = 'color:#b4282d;'; btns = [failBtn]; }
+    else if (hasItems && di.all) { msg = '✅ 全部完成，這天自動算達成'; msgColor = 'color:#1d7f4b;'; btns = [failBtn]; }
+    else if (hasItems) {
+      msg = `已完成 ${di.done}/${di.total} 項` + (man ? '・已手動算達成' : '・這天還不算達成');
+      btns = [h('button', { class: 'btn small' + (man ? '' : ' primary'), type: 'button', onclick: () => toggleManual(g, d) }, man ? '取消手動達成' : '手動算這天達成'), failBtn];
+    } else if (on) { msg = '✅ 這天已達成'; msgColor = 'color:#1d7f4b;'; btns = [h('button', { class: 'btn small', type: 'button', onclick: () => toggleDone(g, d) }, '取消達成'), failBtn]; }
+    else { msg = '這天還沒記錄'; btns = [h('button', { class: 'btn small primary', type: 'button', onclick: () => toggleDone(g, d) }, '✓ 達成'), failBtn]; }
+    box.append(h('div', { class: 'meta', style: msgColor + 'margin-top:8px' }, msg), h('div', { class: 'actions', style: 'margin-top:6px' }, btns));
     return box;
   }
   function toggleOnce(g) {
@@ -562,8 +593,7 @@ function sanitizeState(raw) {
       if (st.status !== 'upcoming' && st.status !== 'expired' || g.doneOn)
         card.append(h('div', { class: 'actions' }, h('button', { class: 'btn small' + (g.doneOn ? '' : ' primary'), type: 'button', onclick: () => toggleOnce(g) }, g.doneOn ? `↩︎ 取消完成（${fmtMD(g.doneOn)}）` : '✓ 標記完成')));
     } else {
-      card.append(dayStrip(g, true));
-      if (g.items && g.items.length) card.append(checklistPanel(g));
+      card.append(dayStrip(g, true), dayPanel(g));
     }
     if (g.reward) card.append(h('div', { class: 'meta' }, '🎁 獎勵：' + g.reward));
     if (st.status === 'achieved') {
@@ -590,7 +620,7 @@ function sanitizeState(raw) {
       else { any = true; list.forEach(([g]) => out.push(goalCard(g))); }
     }
     if (!any && !S.goals.length) out.push(emptyBox('還沒有目標', '新增目標', () => goalForm()));
-    out.push(h('div', { class: 'hint', style: 'margin-top:16px' }, '沒有檢查項目的目標：點圓圈直接打勾或取消。有檢查項目的目標：點圓圈選日期，再勾下面的項目。都可以補登最近 7 天。✗ 表示那天漏掉，淺綠色 ✓ 表示手動算達成；「連續天數」類型的目標漏一天就會歸零。'));
+    out.push(h('div', { class: 'hint', style: 'margin-top:16px' }, '點圓圈選日期（可補登最近 7 天），再用下方的按鈕或檢查項目記錄。深綠 ✓ 達成、淺綠 ✓ 手動算達成、紅底 ✗ 標記未達成、紅框 ✗ 沒記錄（過了當天視同漏掉）。「連續天數」類型的目標漏一天就會歸零；今天按「未達成」會立刻歸零。'));
     return out;
   }
 
@@ -613,7 +643,7 @@ function sanitizeState(raw) {
             h('button', { class: 'btn small', type: 'button', onclick: () => { g.archived = !g.archived; save(); render(); } }, g.archived ? '取消封存' : '封存'),
             h('button', { class: 'btn small danger', type: 'button', onclick: () => {
               if (!confirm(`確定刪除「${g.title}」？打卡紀錄會一起刪除，無法復原。`)) return;
-              S.goals = S.goals.filter(x => x.id !== g.id); delete S.checks[g.id]; delete S.itemLog[g.id]; delete S.manual[g.id]; save(); render();
+              S.goals = S.goals.filter(x => x.id !== g.id); delete S.checks[g.id]; delete S.itemLog[g.id]; delete S.manual[g.id]; delete S.failed[g.id]; save(); render();
             } }, '刪除'))));
       }
     }
@@ -740,7 +770,7 @@ function sanitizeState(raw) {
         h('button', { class: 'btn small', type: 'button', onclick: () => kidForm(k) }, '編輯'),
         h('button', { class: 'btn small danger', type: 'button', onclick: () => {
           if (!confirm(`確定刪除「${k.name}」？他的 ${n} 個目標和打卡紀錄都會刪除，無法復原。`)) return;
-          for (const g of S.goals.filter(g => g.kidId === k.id)) { delete S.checks[g.id]; delete S.itemLog[g.id]; delete S.manual[g.id]; }
+          for (const g of S.goals.filter(g => g.kidId === k.id)) { delete S.checks[g.id]; delete S.itemLog[g.id]; delete S.manual[g.id]; delete S.failed[g.id]; }
           S.goals = S.goals.filter(g => g.kidId !== k.id);
           S.kids = S.kids.filter(x => x.id !== k.id);
           save(); render();
@@ -813,7 +843,7 @@ function sanitizeState(raw) {
       } }, '儲存')]);
   }
   function exportData() {
-    const data = { app: 'KidTrack', exportedAt: new Date().toISOString(), version: 1, kids: S.kids, goals: S.goals, checks: S.checks, itemLog: S.itemLog, manual: S.manual };
+    const data = { app: 'KidTrack', exportedAt: new Date().toISOString(), version: 1, kids: S.kids, goals: S.goals, checks: S.checks, itemLog: S.itemLog, manual: S.manual, failed: S.failed };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = h('a', { href: url, download: `kidtrack-backup-${todayStr()}.json` });
@@ -874,6 +904,7 @@ function sanitizeState(raw) {
       let say;
       if (done) say = '太棒了，你做到了！🎉';
       else if (st.doneToday) say = '今天完成了！👍';
+      else if (st.failedToday) say = '今天沒有達成，明天再加油！💪';
       else if (st.todayActive) say = di && di.done ? `今天完成 ${di.done}/${di.total} 項，繼續加油！` : g.type === 'streak' && st.run === 0 && st.best > 0 ? '重新開始，今天加油！💪' : '今天還沒完成喔';
       else say = '今天休息 😴';
       card.append(h('div', { class: 'say' }, say));
